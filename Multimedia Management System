@@ -1,0 +1,338 @@
+import tkinter as tk
+from tkinter import messagebox, filedialog
+import os
+import sqlite3
+
+
+
+# Initialize SQLite database
+def init_db():
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        password TEXT NOT NULL
+    )
+    """)
+    conn = sqlite3.connect("media.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS media (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        filename TEXT NOT NULL,
+        filetype TEXT NOT NULL
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+# Sign up a new user
+def Sign_up_user():
+    def save_user():
+        username = reg_username_entry.get()
+        password = reg_password_entry.get()
+
+        if not username or not password:
+            messagebox.showerror("Error", "Username and password cannot be empty!")
+            return
+
+        try:
+            conn = sqlite3.connect("users.db")
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
+            conn.commit()
+            conn.close()
+            messagebox.showinfo("Success", "Registration Successful!")
+            reg_window.destroy()
+        except sqlite3.IntegrityError:
+            messagebox.showerror("Error", "Username already exists!")
+
+    # Registration window
+    reg_window = tk.Toplevel(login_window)
+    reg_window.title("Sign up")
+    reg_window.geometry("400x400")
+    reg_window.config(bg="#f0f0f0")  # Background color
+
+    tk.Label(reg_window, text="Sign up New User", font=("Arial", 20), bg="#f0f0f0", fg="#2e3d49").pack(pady=20)
+
+    tk.Label(reg_window, text="Username:", font=("Arial", 14), bg="#f0f0f0", fg="#2e3d49").pack(pady=5)
+    reg_username_entry = tk.Entry(reg_window, font=("Arial", 14))
+    reg_username_entry.pack(pady=5)
+
+    tk.Label(reg_window, text="Password:", font=("Arial", 14), bg="#f0f0f0", fg="#2e3d49").pack(pady=5)
+    reg_password_entry = tk.Entry(reg_window, font=("Arial", 14), show="*")
+    reg_password_entry.pack(pady=5)
+
+    tk.Button(reg_window, text="Sign up", font=("Arial", 14), command=save_user, bg="#4CAF50", fg="white").pack(pady=20)
+
+# Login function
+def login():
+    username = username_entry.get()
+    password = password_entry.get()
+
+    if not username or not password:
+        messagebox.showerror("Error", "Username and password cannot be empty!")
+        return
+
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
+    user = cursor.fetchone()
+    conn.close()
+
+    if user:
+        messagebox.showinfo("Success", "Login Successful!")
+        open_main_window()
+    else:
+        messagebox.showerror("Failure", "Incorrect username or password!")
+
+# Open the main functionality window after successful login
+def open_main_window():
+    login_window.destroy()
+
+    # Create the main window
+    main_window = tk.Tk()
+    main_window.title("Multimedia Management System")
+
+    # Set the main window to full screen
+    main_window.attributes('-fullscreen', True)
+
+    # Add ESC key to exit fullscreen mode
+    def exit_fullscreen(event):
+        main_window.attributes('-fullscreen', False)
+
+    main_window.bind("<Escape>", exit_fullscreen)
+    main_window.config(bg="#f0f0f0")  # Background color
+
+    def add_media():
+        file_path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf"), ("MP3 files", "*.mp3"), ("MP4 files", "*.mp4")])
+        if file_path:
+            filename = os.path.basename(file_path)
+            filetype = filename.split('.')[-1]
+            # Insert media into the database
+            conn = sqlite3.connect("media.db")
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO media (filename, filetype) VALUES (?, ?)", (filename, filetype))
+            conn.commit()
+            conn.close()
+            messagebox.showinfo("Add Media", f"File added: {filename}")
+
+    def delete_media():
+        def delete_selected():
+            selected_files = [file for var, file in selected_checkboxes if var.get() == 1]
+
+            if not selected_files:
+                messagebox.showwarning("Warning", "No files selected!")
+                return
+
+            # Confirm before deletion
+            confirm = messagebox.askyesno("Confirm", f"Are you sure you want to delete {len(selected_files)} file(s)?")
+            if confirm:
+                for file in selected_files:
+                    # Delete media from the database
+                    conn = sqlite3.connect("media.db")
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM media WHERE filename = ?", (file,))
+                    conn.commit()
+                    conn.close()
+                messagebox.showinfo("Delete Media", f"{len(selected_files)} file(s) deleted successfully!")
+                delete_window.destroy()  # Close the delete window
+
+        def cancel_select():
+            for var, _ in selected_checkboxes:
+                var.set(0)
+
+        def close():
+            delete_window.destroy()
+
+        # Delete window setup
+        delete_window = tk.Toplevel(main_window)
+        delete_window.title("Delete Media")
+        delete_window.geometry("500x400")  # Set a fixed window size
+        delete_window.config(bg="#f0f0f0")
+
+        selected_checkboxes = []
+
+        # Fetch all media from the database
+        conn = sqlite3.connect("media.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM media")
+        media_files = cursor.fetchall()
+        conn.close()
+
+        if not media_files:
+            messagebox.showwarning("No Files", "No files to delete!")
+            return
+
+        # Create a checkbox for each media file
+        for i, file in enumerate(media_files):
+            file_name = file[1]  # Get the file name
+            var = tk.IntVar()
+            checkbox = tk.Checkbutton(delete_window, text=file_name, variable=var, bg="#f0f0f0")
+            checkbox.grid(row=i, column=0, sticky="w", padx=10, pady=5)
+            selected_checkboxes.append((var, file_name))
+
+        # Add buttons for delete, cancel, and close actions
+        button_frame = tk.Frame(delete_window)
+        button_frame.grid(row=len(media_files), column=0, pady=20)
+
+        tk.Button(button_frame, text="Delete", font=("Arial", 12), command=delete_selected, bg="#FF6347", fg="white").grid(row=0, column=0, padx=10, pady=5)
+        tk.Button(button_frame, text="Cancel", font=("Arial", 12), command=cancel_select, bg="#FFD700", fg="white").grid(row=0, column=1, padx=10, pady=5)
+        tk.Button(button_frame, text="Close", font=("Arial", 12), command=close, bg="#87CEEB", fg="white").grid(row=0, column=2, padx=10, pady=5)
+
+    def query_media():
+        query_window = tk.Toplevel(main_window)
+        query_window.title("Query Media")
+        query_window.config(bg="#f0f0f0")
+
+        tk.Label(query_window, text="Search for Media", font=("Arial", 14), bg="#f0f0f0", fg="#2e3d49").pack(pady=10)
+
+        search_entry = tk.Entry(query_window, font=("Arial", 14))
+        search_entry.pack(pady=10)
+
+        def search_files():
+            search_term = search_entry.get().lower()
+            conn = sqlite3.connect("media.db")
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM media WHERE filename LIKE ?", ('%' + search_term + '%',))
+            media_files = cursor.fetchall()
+            conn.close()
+
+            # Display search results
+            result_text.delete(1.0, tk.END)
+            if media_files:
+                for file in media_files:
+                    filename = file[1]
+                    result_text.insert(tk.END, f"{filename}\n")
+            else:
+                result_text.insert(tk.END, "No files found.")
+
+        search_button = tk.Button(query_window, text="Search", font=("Arial", 14), command=search_files, bg="#4CAF50", fg="white")
+        search_button.pack(pady=10)
+
+        result_text = tk.Text(query_window, height=10, width=40, font=("Arial", 14))
+        result_text.pack(pady=10)
+
+        def close():
+            query_window.destroy()
+
+        tk.Button(query_window, text="Close", font=("Arial", 14), command=close, bg="#87CEEB", fg="white").pack(pady=20)
+
+    def play_media():
+        def open_file(file_path):
+            # default app for opening files
+            try:
+                if os.name == 'nt':  # Windows
+                    os.startfile(file_path)
+                elif os.name == 'posix':  # macOS/Linux
+                    import subprocess
+                    subprocess.call(['open' if sys.platform == 'darwin' else 'xdg-open', file_path])
+            except Exception as e:
+                messagebox.showerror("Error", f"Unable to open file: {e}")
+
+        # create playback window
+        play_window = tk.Toplevel(main_window)
+        play_window.title("Play Media")
+        play_window.geometry("600x500")  # fixed window
+        play_window.config(bg="#f0f0f0")
+
+        tk.Label(play_window, text="Select a Media File to Play", font=("Arial", 14), bg="#f0f0f0", fg="#2e3d49").pack(pady=10)
+
+        # read media files form the database
+        conn = sqlite3.connect("media.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM media")
+        media_files = cursor.fetchall()
+        conn.close()
+
+        if not media_files:
+            messagebox.showwarning("No Files", "No files available to play!")
+            play_window.destroy()
+            return
+
+        def play_selected_file():
+            selected_index = file_listbox.curselection()
+            if not selected_index:
+                messagebox.showwarning("Warning", "No file selected!")
+                return
+
+            selected_file = media_files[selected_index[0]]
+            file_name = selected_file[1]
+
+            # assume the media file is stored in the current directory
+            file_path = os.path.join(os.getcwd(), file_name)
+            if not os.path.exists(file_path):
+                messagebox.showerror("Error", f"File not found: {file_name}")
+            else:
+                open_file(file_path)
+
+        # create file list box
+        file_listbox = tk.Listbox(play_window, font=("Arial", 14), height=10, width=40)
+        file_listbox.pack(pady=10)
+
+        # add the file to the list box
+        for file in media_files:
+            file_listbox.insert(tk.END, file[1])
+
+        # add play and close buttton
+        tk.Button(play_window, text="Play", font=("Arial", 14), command=play_selected_file, bg="#4CAF50", fg="white").pack(pady=10)
+        tk.Button(play_window, text="Close", font=("Arial", 14), command=play_window.destroy, bg="#87CEEB", fg="white").pack(pady=10)
+
+       
+
+    def logout():
+        main_window.destroy()
+        show_login_screen()
+
+    tk.Label(main_window, text="Multimedia Management System", font=("Arial", 30), bg="#f0f0f0", fg="#2e3d49").pack(pady=20)
+
+    tk.Button(main_window, text="Add Media", font=("Arial", 14), width=20, command=add_media, bg="#4CAF50", fg="white").pack(pady=10)
+    tk.Button(main_window, text="Delete Media", font=("Arial", 14), width=20, command=delete_media, bg="#FF6347", fg="white").pack(pady=10)
+    tk.Button(main_window, text="Query Media", font=("Arial", 14), width=20, command=query_media, bg="#87CEEB", fg="white").pack(pady=10)
+    tk.Button(main_window, text="Play Media", font=("Arial", 14), width=20, command=play_media, bg="#FFD700", fg="white").pack(pady=10)
+
+    tk.Button(main_window, text="Logout", font=("Arial", 14), width=20, command=logout, bg="#B22222", fg="white").pack(pady=10)
+
+    main_window.mainloop()
+
+# Show login screen
+def show_login_screen():
+    global login_window
+    login_window = tk.Tk()
+    login_window.title("Member Management - Login")
+
+    login_window.attributes('-fullscreen', True)
+    login_window.config(bg="#f0f0f0")
+
+    def exit_fullscreen(event):
+        login_window.attributes('-fullscreen', False)
+
+    login_window.bind("<Escape>", exit_fullscreen)
+
+    tk.Label(login_window, text="Member Management Login", font=("Arial", 30), bg="#f0f0f0", fg="#2e3d49").pack(pady=40)
+
+    tk.Label(login_window, text="Username:", font=("Arial", 20), bg="#f0f0f0", fg="#2e3d49").pack(pady=10)
+    global username_entry
+    username_entry = tk.Entry(login_window, font=("Arial", 20))
+    username_entry.pack(pady=10)
+
+    tk.Label(login_window, text="Password:", font=("Arial", 20), bg="#f0f0f0", fg="#2e3d49").pack(pady=10)
+    global password_entry
+    password_entry = tk.Entry(login_window, font=("Arial", 20), show="*")
+    password_entry.pack(pady=10)
+
+    tk.Button(login_window, text="Login", font=("Arial", 18), command=login, bg="#4CAF50", fg="white").pack(pady=20)
+    tk.Button(login_window, text="Sign up", font=("Arial", 18), command=Sign_up_user, bg="#87CEEB", fg="white").pack(pady=10)
+
+    tk.Button(login_window, text="Exit", font=("Arial", 18), command=login_window.quit, bg="#B22222", fg="white").pack(pady=20)
+
+    login_window.mainloop()
+
+# Initialize the database
+init_db()
+
+# Start by showing the login screen
+show_login_screen()
+
